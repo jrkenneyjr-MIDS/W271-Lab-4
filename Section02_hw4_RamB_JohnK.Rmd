@@ -5,8 +5,11 @@ date: "November 28, 2017"
 output: pdf_document
 ---
 
-```{r setup, include=FALSE}
+```{r}
+library(knitr)
 opts_chunk$set(tidy.opts=list(width.cutoff=60),tidy=TRUE)
+
+library(xts)
 ```
 
 #Description of the Lab
@@ -26,8 +29,27 @@ a few candidate models that you have considered. Besides using information crite
 absolute percentage error (MAPE) on the test sample in your model selection.
 
 ```{r}
-ts.csv = read.csv("C:/Users/jkenney/Dropbox/UCB/Fall 2017/W271/Labs/Lab 4/Lab4_2017Fall/Lab4-series2.csv", header = TRUE)
-glimpse(ts.csv)
+ts.csv = as.data.frame(read.csv("C:/Users/jkenney/Dropbox/UCB/Fall 2017/W271/Labs/Lab 4/Lab4_2017Fall/Lab4-series2.csv", header = TRUE))
+head(ts.csv[,1])
+ts = ts(ts.csv, c(ts.csv[,1]))
+plot(ts)
+View(pacf(ts[,2]))
+install.packages("tseries")
+library(tseries)
+
+#Also look at stl()
+decompose(ts[,2], type = c("additive"))
+
+#Fourier Decomposition
+
+adf.test(diff(ts[,2],1,1))
+
+pacf(diff(ts[,2],1,1))
+acf(diff(ts[,2],1,1))
+
+dif.1 = diff(ts[,2],1,1)
+
+pacf(diff(dif.1, lag = 12, differences = 1))
 ```
 
 
