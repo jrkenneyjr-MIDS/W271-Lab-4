@@ -26,7 +26,8 @@ a few candidate models that you have considered. Besides using information crite
 absolute percentage error (MAPE) on the test sample in your model selection.
 
 ```{r}
-
+ts.csv = read.csv("C:/Users/jkenney/Dropbox/UCB/Fall 2017/W271/Labs/Lab 4/Lab4_2017Fall/Lab4-series2.csv", header = TRUE)
+glimpse(ts.csv)
 ```
 
 
