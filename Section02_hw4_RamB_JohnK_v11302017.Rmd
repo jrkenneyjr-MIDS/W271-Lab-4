@@ -1,0 +1,151 @@
+---
+title: "Lab 4"
+author: "Ram Balasubramanian, John Kenney"
+date: "November 28, 2017"
+output: pdf_document
+---
+
+```{r}
+library(knitr)
+opts_chunk$set(tidy.opts=list(width.cutoff=60),tidy=TRUE)
+
+library(xts)
+library(tseries)
+library(lubridate)
+```
+
+#Description of the Lab
+
+In this lab, you are provided a time series stored in "Lab4-series2.csv". The series, which is a monthly series,
+covers the historical period from 1990 to 2015. Your main task is to build a time series model, using materials
+covered between lecture 6 - lecture 10 (not including VAR modeling), and conduct a monthly, 11-month
+ahead forecast of the series in 2015.
+
+You will have to split the series into a training series, which includes the data from 1990 to 2014 December,
+leaving all the months in 2015 as the test data.
+
+As we have studied extensively in the last 6 lectures on how to build time series models, I expect that
+your team illustrate and describe all of steps in building up to your final model. All of your analyses and
+decisions to select your final models must be clearly demonstrated. It is quite possible that you will have
+a few candidate models that you have considered. Besides using information criterion, consider the mean
+absolute percentage error (MAPE) on the test sample in your model selection.
+
+```{r}
+x= as.data.frame(read.csv("Lab4-series2.csv", header = TRUE))
+colnames(x) <- c("num", "value")
+idx <- seq(as.Date("1990/1/1"), by = "month", length.out = dim(x)[1])
+
+ts_all <- xts(x['value'], order.by=idx)
+str(ts_all)
+head(ts_all,10)
+options(digits = 4)
+#Create train set from 1990-2014
+ts = ts_all['1990-01-01/2014-12-31']
+
+  
+```
+# Exploratory Data Analysis:
+
+## Plot the time series
+```{r}
+plot.xts(ts, type='l', minor.ticks = NULL, major.ticks = 12, main="Time Series Plot", grid.ticks.on="years")
+```
+
+## Observations:  
+Trend:  Series doesn't show any overall trend;  there appear to be periods of "shock" where the series goes up quickly and slowly dissipates from those highs. In general the series exhibits "random walk" behavior.  
+Seasonal & Cyclical patterns:  There are some seasonal patterns apparent in the series. There is also a broad cyclical pattern (ups and downs) - but the periodicity doesn't appear to be consistent.   
+Outliers:  There aren't any apparent outliers.
+
+
+## Check for Stationarity
+```{r}
+#is the data stationary in the mean/variance?
+#Let's look at the acf and pacf plots
+  par(mfrow=c(1,2))
+  acf(ts, main="ACF of Given Series")
+  pacf(ts, main="PACF of Given Series")
+```
+## Observations:  
+The ACF declines very slowly (indicative of an AR(1) process).  
+The PACF shows significance at lag-1.  There is also significant correlation at lags 4,7,10,11,13. Note that corellation at lag 13 is negative. 
+
+
+
+```{r echo=FALSE}
+
+#Conduct Jlung-Box test to see if data are serially correlated
+  BoxPValue = Box.test(ts,type='Ljung-Box',lag=20)$p.value
+  result = "Data are Random"
+  if (BoxPValue < 0.05){ result = "Data are NOT random "} 
+  print(paste(result, " - p-value of box-test = ",BoxPValue))
+
+#conduct Dicky-Fuller test to see if series is stationary
+  adfPvalue = adf.test(ts)$p.value
+  result = "Unit Root Present - Non Stationary Series"
+  if (adfPvalue < 0.05){ result = " Reject Unit Root Presence - Stationary Series"} 
+  print(paste(result, " - p-value of adf-test =",adfPvalue))
+
+#monthplot(ts)
+
+```
+## Dicky-Fuller test shows that the series is not stationary.  While there is no clear trend in the data - it does exhibit random-walk behavior.  Let's apply a first difference to see if that makes the series stationary.
+
+
+
+## First Difference
+```{r}
+diff1 = diff(ts, lag=1, differences=1)['1990-02-01/'] #get rid of the first NA
+autoplot.zoo(diff1)
+acf(diff1, na.action=na.pass)
+pacf(diff1, na.action=na.pass)
+
+adfPvalue = adf.test(diff1)$p.value
+
+result = "Unit Root Present - Non Stationary Series"
+if (adfPvalue < 0.05){ result = " Reject Unit Root Presence - Stationary Series"} 
+print(paste(result, " - p-value of adf-test =",adfPvalue))
+
+```
+Observations:
+Taking the first difference makes the series stationary.  But the plot of the series and the ACF shows a strong seasonal pattern. The ACF plot shows strong  correlations at lag 3 (negative), 6 (postive), 9 (-ve), 12 (+ve).  The PACF shows similar seasonal patterns. 
+Let's investigate that further. 
+
+
+## Investigate seasonality
+```{r}
+#Look at monthly averages
+plot(aggregate(ts, month(index(ts)), mean), type='o')
+monthplot(ts)
+```
+### The month plot shows there are "high seasons" and "low seasons".
+```{r}
+#since this is a monthly series, let's try a 12-m seasonal difference
+
+diff12 = diff(ts, lag=12, differences = 1)['1991-01-01/']
+autoplot.zoo(diff12)
+par(mfrow=c(1,2))
+acf(diff12)
+pacf(diff12)
+```
+
+## The acf shows a slow decline, and the pacf plot shows a strong drop after lag-1 - both characteristics of an AR-1 process.  The pacf also shows strong correlation at Lags 3, 6, and at 13 (WHAT IS THIS SUPPOSED TO MEAN???)
+
+
+```{r}
+adfPvalue = adf.test(diff12)$p.value
+result = "Unit Root Present - Non Stationary Series"
+if (adfPvalue < 0.05){ result = " Reject Unit Root Presence - Stationary Series"} 
+print(paste(result, " - p-value of adf-test =",adfPvalue))
+
+```
+
+
+```{r}
+
+#JUST PLAYING WITH OTHER LAGS IN ADDITION TO 12.  SOMEWHAT LOST HERE
+
+diff3 = diff(diff12, lag=3, differences=1)['1991-04-01/']
+acf(diff3)
+pacf(diff3)
+```
+
