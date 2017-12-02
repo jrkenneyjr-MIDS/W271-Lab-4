@@ -41,8 +41,8 @@ head(ts_all,10)
 options(digits = 4)
 #Create train set from 1990-2014
 ts = ts_all['1990-01-01/2014-12-31']
-
-  
+ts.test = ts_all["2015-01-01/"]
+ts.test
 ```
 # Exploratory Data Analysis:
 
@@ -67,7 +67,7 @@ Outliers:  There aren't any apparent outliers.
 ```
 ## Observations:  
 The ACF declines very slowly (indicative of an AR(1) process).  
-The PACF shows significance at lag-1.  There is also significant correlation at lags 4,7,10,11,13. Note that corellation at lag 13 is negative. 
+The PACF shows significance at lag-1.  There is also significant correlation at lags 4,7,10,11,13. Note that corellation at lags 7 and 13 is negative. 
 
 
 
@@ -108,8 +108,106 @@ print(paste(result, " - p-value of adf-test =",adfPvalue))
 #JK 11/30
 mean(ts)
 mean(diff1)
+
+#Decompose, stl shows no seasonality
 decompose(diff1)
-arima()
+
+#Plot residuals, add a smoother
+
+#Add linear regression on month, ANOVA by month, visualization
+
+#Percentage Error: p_i=100e_i/y_i
+#MAPE: MAPE=mean(|p_i|).
+MAPE = function(y.meas, y.pred){
+  m = c()
+  for (i in seq(1, length(y.meas))){
+    m[i] = abs((y.meas[i]-y.pred[i])/y.meas[i])
+  }
+  return(mean(m))
+}
+
+#sMAPE: sMAPE=mean(200|y_i???y_i_hat|/(y_i+y_i_hat))
+#Cite: https://robjhyndman.com/hyndsight/smape/
+sMAPE = function(y.meas, y.pred){
+  s = c()
+  for (i in seq(1, length(y.meas))){
+    s[i] = 2*abs(y.meas[i]-y.pred[i])/(abs(y.meas[i])+abs(y.pred[i]))
+  }
+  return(mean(s))
+}
+
+arima.loop = function(p,d,q,P,D,Q,M){
+  df = data.frame(matrix(vector(), nrow = 0, ncol =  11,
+                dimnames=list(c(), c("p",'d','q','P','D','Q','m',"AIC","BIC","MAPE","sMAPE"))),
+                stringsAsFactors=F)
+  for (m in M){
+    for (D in seq(0,D)){
+      for (P in seq(0,P)){
+        for (Q in seq(0,Q)){
+          for (d in seq(0,d)){
+            for (p in seq(0,p)){
+              for (q in seq(0,q)){
+                modfit = arima(ts, order = c(p,d,q), 
+                      seasonal = list(order = c(P,D,Q),period=m),
+                      method = "ML")
+                mf.aic = modfit$aic
+                mf.bic = BIC(modfit)
+                pr = predict(modfit, n.ahead = 11)
+                mf.mape = MAPE(ts.test, pr$pred)
+                mf.smape = sMAPE(ts.test, pr$pred)
+                df[dim(df)[1]+1,] = c(p,d,q,P,D,Q,m,mf.aic,mf.bic,mf.mape,mf.smape)
+              }}}}}}}
+  return(df)
+  }
+
+test.arloop = arima.loop(2,1,1,1,1,1,c(12))
+
+test.arloop[order(test.arloop$sMAPE), ] 
+test.arloop[order(test.arloop$AIC), ] 
+
+
+
+#Can we use multiple seasons (e.g. 12 and 4?)
+best.arima = arima(ts, order = c(1,1,1),
+                   seasonal = list(order = c(0,1,1),period=12),
+                   method = "ML")
+acf(best.arima$residuals)
+pacf(best.arima$residuals)
+tsdiag(best.arima)
+
+best.arima$aic
+BIC(best.arima)
+pr = predict(best.arima, n.ahead = 11)
+sMAPE(ts.test,pr$pred)
+MAPE(ts.test,pr$pred)
+
+best.arima2 = arima(ts, order = c(2,0,0),
+                   seasonal = list(order = c(0,1,0),period=12),
+                   method = "ML")
+acf(best.arima2$residuals)
+pacf(best.arima2$residuals)
+tsdiag(best.arima2)
+
+best.arima2$aic
+BIC(best.arima2)
+pr = predict(best.arima2, n.ahead = 11)
+sMAPE(ts.test,pr$pred)
+MAPE(ts.test,pr$pred)
+
+best.arima3 = arima(ts, order = c(2,0,0),
+                   seasonal = list(order = c(1,1,1),period=12),
+                   method = "ML")
+acf(best.arima2$residuals)
+pacf(best.arima2$residuals)
+tsdiag(best.arima2)
+
+best.arima3$aic
+BIC(best.arima3)
+pr = predict(best.arima3, n.ahead = 11)
+sMAPE(ts.test,pr$pred)
+MAPE(ts.test,pr$pred)
+
+#Try loops with the other ARIMA methods (ML, CSS)
 
 ```
 Observations:

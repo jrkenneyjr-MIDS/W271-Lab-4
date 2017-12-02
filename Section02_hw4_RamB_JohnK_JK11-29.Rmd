@@ -1,0 +1,76 @@
+---
+title: "Lab 4"
+author: "Ram Balasubramanian, John Kenney"
+date: "November 28, 2017"
+output: pdf_document
+---
+
+```{r}
+library(knitr)
+opts_chunk$set(tidy.opts=list(width.cutoff=60),tidy=TRUE)
+
+library(xts)
+```
+
+#Description of the Lab
+
+In this lab, you are provided a time series stored in "Lab4-series2.csv". The series, which is a monthly series,
+covers the historical period from 1990 to 2015. Your main task is to build a time series model, using materials
+covered between lecture 6 - lecture 10 (not including VAR modeling), and conduct a monthly, 11-month
+ahead forecast of the series in 2015.
+
+You will have to split the series into a training series, which includes the data from 1990 to 2014 December,
+leaving all the months in 2015 as the test data.
+
+As we have studied extensively in the last 6 lectures on how to build time series models, I expect that
+your team illustrate and describe all of steps in building up to your final model. All of your analyses and
+decisions to select your final models must be clearly demonstrated. It is quite possible that you will have
+a few candidate models that you have considered. Besides using information criterion, consider the mean
+absolute percentage error (MAPE) on the test sample in your model selection.
+
+```{r}
+#Load the data
+df = as.data.frame(read.csv(
+  'C:/Users/jkenney/Dropbox/UCB/Fall 2017/W271/Labs/Lab 4/Lab4_2017Fall/W271-Lab-4/Lab4-series2.csv', header = TRUE))
+head(df$x)
+
+#Create the Time Series
+ts = as.xts(ts(df$x, frequency = 12, start = c(1990,1)))
+str(ts)
+
+#Separate into Test and Train Sets
+train = ts['1990-01/2014-12']
+tail(train)
+test = ts['2015-01/']
+test
+
+#Autocorrelation
+plot(train)
+acf(train)
+pacf(train)
+
+
+View(pacf(ts[,2]))
+install.packages("tseries")
+library(tseries)
+
+#Also look at stl()
+decompose(ts[,2], type = c("additive"))
+
+#Fourier Decomposition
+
+adf.test(diff(ts[,2],1,1))
+
+pacf(diff(ts[,2],1,1))
+acf(diff(ts[,2],1,1))
+
+dif.1 = diff(ts[,2],1,1)
+
+pacf(diff(dif.1, lag = 12, differences = 1))
+```
+
+
+
+```{r echo=FALSE}
+
+```
