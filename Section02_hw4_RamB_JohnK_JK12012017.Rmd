@@ -66,8 +66,13 @@ Outliers:  There aren't any apparent outliers.
   pacf(ts, main="PACF of Given Series")
 ```
 ## Observations:  
+<<<<<<< HEAD:Section02_hw4_RamB_JohnK_v12012017.Rmd
 The ACF declines very slowly (indicative of an AR(1) process).  
 The PACF shows significance at lag-1.  There is also significant correlation at lags 4,7,10,11,13. Note that corellation at lags 7 and 13 is negative. 
+=======
+The ACF declines very slowly (indicative of an AR(1) process).  Infact the ACF signature looks like a random walk process.
+The PACF shows significance at lag-1.  There is also significant correlation at lags 4,7,10,11,13. Note that corellation at lag 13 is negative. 
+>>>>>>> 03909acea170882372efc7666bc394be60747c9b:Section02_hw4_RamB_JohnK_v11302017.Rmd
 
 
 
@@ -96,6 +101,8 @@ monthplot(ts)
 ```{r}
 diff1 = diff(ts, lag=1, differences=1, na.pad = F)
 autoplot.zoo(diff1)
+
+par(mfrow=c(1,2))
 acf(diff1, na.action=na.pass)
 pacf(diff1, na.action=na.pass)
 
@@ -220,6 +227,7 @@ Notice that significant trends shifted from 13 to 12. The differenced series als
 ## Investigate seasonality
 ```{r}
 #Look at monthly averages
+par(mfrow=c(1,2))
 plot(aggregate(ts, month(index(ts)), mean), type='o')
 monthplot(ts)
 ```
@@ -249,6 +257,7 @@ print(paste(result, " - p-value of adf-test =",adfPvalue))
 
 ```
 
+#At this point we are looking at a ARIMA(1,0,0),(0,1,0)_12 model.
 
 ```{r}
 
