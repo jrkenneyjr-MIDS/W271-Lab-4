@@ -12,6 +12,7 @@ opts_chunk$set(tidy.opts=list(width.cutoff=60),tidy=TRUE)
 library(xts)
 library(tseries)
 library(lubridate)
+library(forecast)
 ```
 
 #Description of the Lab
@@ -42,7 +43,6 @@ options(digits = 4)
 #Create train set from 1990-2014
 ts = ts_all['1990-01-01/2014-12-31']
 ts.test = ts_all["2015-01-01/"]
-ts.test
 ```
 # Exploratory Data Analysis:
 
@@ -66,13 +66,8 @@ Outliers:  There aren't any apparent outliers.
   pacf(ts, main="PACF of Given Series")
 ```
 ## Observations:  
-<<<<<<< HEAD:Section02_hw4_RamB_JohnK_v12012017.Rmd
 The ACF declines very slowly (indicative of an AR(1) process).  
 The PACF shows significance at lag-1.  There is also significant correlation at lags 4,7,10,11,13. Note that corellation at lags 7 and 13 is negative. 
-=======
-The ACF declines very slowly (indicative of an AR(1) process).  Infact the ACF signature looks like a random walk process.
-The PACF shows significance at lag-1.  There is also significant correlation at lags 4,7,10,11,13. Note that corellation at lag 13 is negative. 
->>>>>>> 03909acea170882372efc7666bc394be60747c9b:Section02_hw4_RamB_JohnK_v11302017.Rmd
 
 
 
@@ -92,6 +87,14 @@ The PACF shows significance at lag-1.  There is also significant correlation at 
 
 monthplot(ts)
 
+#Decompose the series for seasonality, trends, etc.
+#STL: Seasonal decomposition of Timeseries by Loess
+stl(ts, s.window = "periodic", s.degree = 1, t.degree = 1, robust = F)
+
+#Add Smoothing
+install.packages("fpp")
+fit1 <- ses(oildata, alpha = 0.2, initial = "simple", h = 3)
+fit2 <- ses(oildata, alpha = 0.6, initial = "simple", h = 3)
 ```
 ## Dicky-Fuller test shows that the series is not stationary.  While there is no clear trend in the data - it does exhibit random-walk behavior.  Let's apply a first difference to see if that makes the series stationary.
 
@@ -101,8 +104,6 @@ monthplot(ts)
 ```{r}
 diff1 = diff(ts, lag=1, differences=1, na.pad = F)
 autoplot.zoo(diff1)
-
-par(mfrow=c(1,2))
 acf(diff1, na.action=na.pass)
 pacf(diff1, na.action=na.pass)
 
@@ -122,6 +123,8 @@ decompose(diff1)
 #Plot residuals, add a smoother
 
 #Add linear regression on month, ANOVA by month, visualization
+methods(forecast)
+#Holt-Winters, STL, 
 
 #Percentage Error: p_i=100e_i/y_i
 #MAPE: MAPE=mean(|p_i|).
@@ -143,6 +146,7 @@ sMAPE = function(y.meas, y.pred){
   return(mean(s))
 }
 
+#Add additional qualification methods (MAE, MPE, AC1, Thiel's U, etc.)
 arima.loop = function(p,d,q,P,D,Q,M){
   df = data.frame(matrix(vector(), nrow = 0, ncol =  11,
                 dimnames=list(c(), c("p",'d','q','P','D','Q','m',"AIC","BIC","MAPE","sMAPE"))),
@@ -154,34 +158,63 @@ arima.loop = function(p,d,q,P,D,Q,M){
           for (d in seq(0,d)){
             for (p in seq(0,p)){
               for (q in seq(0,q)){
-                modfit = arima(ts, order = c(p,d,q), 
+               tryCatch(
+                  {
+                   modfit = arima(ts, order = c(p,d,q), 
                       seasonal = list(order = c(P,D,Q),period=m),
                       method = "ML")
-                mf.aic = modfit$aic
-                mf.bic = BIC(modfit)
-                pr = predict(modfit, n.ahead = 11)
-                mf.mape = MAPE(ts.test, pr$pred)
-                mf.smape = sMAPE(ts.test, pr$pred)
-                df[dim(df)[1]+1,] = c(p,d,q,P,D,Q,m,mf.aic,mf.bic,mf.mape,mf.smape)
+                    mf.aic = modfit$aic
+                    mf.bic = BIC(modfit)
+                    pr = predict(modfit, n.ahead = 11)
+                    mf.mape = MAPE(ts.test, pr$pred)
+                    mf.smape = sMAPE(ts.test, pr$pred)
+                    df[dim(df)[1]+1,] = c(p,d,q,P,D,Q,m,mf.aic,mf.bic,mf.mape,mf.smape)
+                  },
+                  error=function(e){
+                    df[dim(df)[1]+1,] = c(p,d,q,P,D,Q,m,NA,NA,NA,NA)
+                  }
+                  warning=function(cond) {
+                    return(NULL)
+                  }
+                )
+                
               }}}}}}}
   return(df)
   }
 
+
 test.arloop = arima.loop(2,1,1,1,1,1,c(12))
 
-test.arloop[order(test.arloop$sMAPE), ] 
-test.arloop[order(test.arloop$AIC), ] 
+#Which model is has lowest MAPE?
+test.arloop[order(test.arloop$MAPE), ]
 
+#Which model is has lowest symmetric MAPE?
+head(test.arloop[order(test.arloop$sMAPE), ], 10)
+
+#Which model has lowest AIC?  
+  #Should we also include corrected AIC?
+  #Probably not.  All models will have same correction factor because they are all the same length.
+head(test.arloop[order(test.arloop$AIC), ], 10)
+```
+
+```{r}
+
+
+#Is this the best model to predict 2016?  
+#Probably more robust estimation is to use cross-validation
+#Cross-Validation of Time Series: https://robjhyndman.com/hyndsight/tscv/
+#A.K.A. Evaluation on a Rolling Forecasting Origin  
 
 
 #Can we use multiple seasons (e.g. 12 and 4?)
-best.arima = arima(ts, order = c(1,1,1),
-                   seasonal = list(order = c(0,1,1),period=12),
+best.arima = arima(ts, order = c(2,1,1),
+                   seasonal = list(order = c(1,1,0),period=6),
                    method = "ML")
+
 acf(best.arima$residuals)
 pacf(best.arima$residuals)
 tsdiag(best.arima)
-
+?arima
 best.arima$aic
 BIC(best.arima)
 pr = predict(best.arima, n.ahead = 11)
@@ -227,7 +260,6 @@ Notice that significant trends shifted from 13 to 12. The differenced series als
 ## Investigate seasonality
 ```{r}
 #Look at monthly averages
-par(mfrow=c(1,2))
 plot(aggregate(ts, month(index(ts)), mean), type='o')
 monthplot(ts)
 ```
@@ -257,7 +289,6 @@ print(paste(result, " - p-value of adf-test =",adfPvalue))
 
 ```
 
-#At this point we are looking at a ARIMA(1,0,0),(0,1,0)_12 model.
 
 ```{r}
 
