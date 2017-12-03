@@ -5,7 +5,7 @@ date: "November 28, 2017"
 output: pdf_document
 ---
 
-```{r}
+```{r include = FALSE}
 library(knitr)
 opts_chunk$set(tidy.opts=list(width.cutoff=60),tidy=TRUE)
 
@@ -32,32 +32,83 @@ a few candidate models that you have considered. Besides using information crite
 absolute percentage error (MAPE) on the test sample in your model selection.
 
 ```{r}
-x= as.data.frame(read.csv("Lab4-series2.csv", header = TRUE))
+x = as.data.frame(read.csv("Lab4-series2.csv", header = TRUE))
 colnames(x) <- c("num", "value")
+head(x)
+```
+
+
+
+```{r}
 idx <- seq(as.Date("1990/1/1"), by = "month", length.out = dim(x)[1])
 
+#Split Timeseries into Train and Test sets
 ts_all <- xts(x['value'], order.by=idx)
 str(ts_all)
 head(ts_all,10)
 options(digits = 4)
 #Create train set from 1990-2014
-ts = ts_all['1990-01-01/2014-12-31']
+ts.train = ts_all['1990-01-01/2014-12-31']
 ts.test = ts_all["2015-01-01/"]
 ```
 # Exploratory Data Analysis:
 
 ## Plot the time series
 ```{r}
-plot.xts(ts, type='l', minor.ticks = NULL, major.ticks = 12, main="Time Series Plot", grid.ticks.on="years")
+plot.xts(ts.train, type='l', minor.ticks = NULL, major.ticks = 12, main="Time Series Plot", grid.ticks.on="years")
+```
+## Add smoother to see if there is visual indication of a trend or seasonality
+```{r include=FALSE}
+#Add Smoothing
+library(fpp)
+k.smooth.wide <- ksmooth(time(ts.train), ts.train, kernel = c("normal"), bandwidth = 200)
+ksw = as.xts(k.smooth.wide$y, order.by = index(ts.train))
+k.smooth.narrow <- ksmooth(time(ts.train), ts.train, kernel = c("normal"), bandwidth = 100)
+ksn = as.xts(k.smooth.narrow$y, order.by = index(ts.train))
+
+hw = HoltWinters(ts.train, alpha = 0.1, beta = 1, gamma = F)
+plot(hw)
+
+hw.xts = xts(hw, order.by = index(ts.train))
+tw = cbind(ts.train, ksw, ksn, hw)
+colnames(tw) = c("Train", "Wide", "Narrow")
+
+plot.xts(tw, type='l', col = c('black', 'blue', "green"), minor.ticks = NULL, 
+         major.ticks = 12, main="Time Series Plot", grid.ticks.on="years",
+         xlim = c(min(index(ts.train)), max(index(ts.train))))
 ```
 
+##  Fit a Linear Model to see if statistically significant trend
+```{r}
+trnd = lm(x, formula = value ~ num)
+summary(trnd)
+```
 ## Observations:  
 Trend:  Series doesn't show any overall trend;  there appear to be periods of "shock" where the series goes up quickly and slowly dissipates from those highs. In general the series exhibits "random walk" behavior.  
 Seasonal & Cyclical patterns:  There are some seasonal patterns apparent in the series. There is also a broad cyclical pattern (ups and downs) - but the periodicity doesn't appear to be consistent.   
 Outliers:  There aren't any apparent outliers.
 
 
-## Check for Stationarity
+
+We see a statistically significant trend, albeit nearly zero.
+
+
+# Check for Seasonality 
+```{r}
+decompose(ts)
+
+#Decompose the series for seasonality, trends, etc.
+#STL: Seasonal decomposition of Timeseries by Loess
+
+stl(ts, s.window = "periodic", s.degree = 1, t.degree = 1, robust = F)
+
+```
+Seasonal decomposition using decompose() and stl() show no evidence of seasonality.
+
+#Use the Holt Winters Method to Confirm
+
+
+## Check for AR 1 Random Walk
 ```{r}
 #is the data stationary in the mean/variance?
 #Let's look at the acf and pacf plots
@@ -86,24 +137,22 @@ The PACF shows significance at lag-1.  There is also significant correlation at 
   print(paste(result, " - p-value of adf-test =",adfPvalue))
 
 monthplot(ts)
-
-#Decompose the series for seasonality, trends, etc.
-#STL: Seasonal decomposition of Timeseries by Loess
-stl(ts, s.window = "periodic", s.degree = 1, t.degree = 1, robust = F)
-
-#Add Smoothing
-install.packages("fpp")
-fit1 <- ses(oildata, alpha = 0.2, initial = "simple", h = 3)
-fit2 <- ses(oildata, alpha = 0.6, initial = "simple", h = 3)
 ```
+The Ljung-Box test indicates there is significant auto-correlation over 20 lags.  This confirms the slow decay of correlation over lags in the ACF.  
+
+Dickey-Fuller test indicates train set is not stationary, since we cannot reject the null hypothesis that there is a unit root.
+
+
 ## Dicky-Fuller test shows that the series is not stationary.  While there is no clear trend in the data - it does exhibit random-walk behavior.  Let's apply a first difference to see if that makes the series stationary.
 
 
 
 ## First Difference
 ```{r}
-diff1 = diff(ts, lag=1, differences=1, na.pad = F)
+diff1 = diff(ts.train, lag=1, differences=1, na.pad = F)
 autoplot.zoo(diff1)
+#hwd = HoltWinters(diff1, alpha = 0.2, beta, 0.2, gamma = 1, seasonal = "additive")
+
 acf(diff1, na.action=na.pass)
 pacf(diff1, na.action=na.pass)
 
@@ -125,7 +174,11 @@ decompose(diff1)
 #Add linear regression on month, ANOVA by month, visualization
 methods(forecast)
 #Holt-Winters, STL, 
+```
 
+
+
+```{r}
 #Percentage Error: p_i=100e_i/y_i
 #MAPE: MAPE=mean(|p_i|).
 MAPE = function(y.meas, y.pred){
