@@ -1,0 +1,396 @@
+---
+title: "Lab 4"
+author: "Ram Balasubramanian, John Kenney"
+date: "November 28, 2017"
+output: pdf_document
+---
+
+```{r include = FALSE}
+library(knitr)
+opts_chunk$set(tidy.opts=list(width.cutoff=60),tidy=TRUE)
+
+library(xts)
+library(tseries)
+library(lubridate)
+library(forecast)
+options(digits = 4)
+```
+
+#Read and Examine the data:  
+We conducted a thorough examination of the data provided to ensure that we don't have any missing values, coding errors etc.  We have not provided the code below to conserve the allotted space for more interesting examination of the given time series.
+```{r}
+
+x = as.data.frame(read.csv("Lab4-series2.csv", header = TRUE))
+colnames(x) <- c("num", "value")
+idx <- seq(as.Date("1990/1/1"), by = "month", length.out = dim(x)[1])
+#Split Timeseries into Train and Test sets
+ts_all <- xts(x['value'], order.by=idx)
+#Create train set from 1990-2014
+ts.train = ts_all['1990-01-01/2014-12-31']
+ts.test = ts_all["2015-01-01/"]
+```
+#1 Exploratory Data Analysis:
+
+## 1.1 Plot the time series
+```{r}
+plot.xts(ts.train, type='l', minor.ticks = NULL, major.ticks = 12, main="Time Series Plot", grid.ticks.on="years")
+```
+
+### Observations:
+Trend: Plot doesn't show any obvious signs of a trend. Series exhibits patterns where there are sudden shocks, when the series goes up quickly; and very slowly declines.  
+Seasonal/Cyclical patterns: There appear to be seasonal ups and downs (which are very apparent especially during years when the series is relatively stable e.g. '95-'98).  
+Outliers:  There aren't any apparent outliers.  
+Transformations: We do not see any patterns in the time-series that suggests that we should transform the data (like a log, or power transformation)  
+
+Next step in our EDA, we will check for stationarity.
+
+## 1.2  Check for Stationarity:  
+### 1.2.1 Trend Stationarity:  
+
+Add smoother to see if there is visual indication of a trend.
+   
+```{r include=FALSE}
+#Add Smoothing
+library(fpp)
+k.smooth.wide <- ksmooth(time(ts.train), ts.train, kernel = c("normal"), bandwidth = 200)
+ksw = as.xts(k.smooth.wide$y, order.by = index(ts.train))
+k.smooth.narrow <- ksmooth(time(ts.train), ts.train, kernel = c("normal"), bandwidth = 100)
+ksn = as.xts(k.smooth.narrow$y, order.by = index(ts.train))
+
+hw = HoltWinters(ts.train, alpha = 0.1, beta = 1, gamma = F)
+plot(hw)
+hw.xhat = hw$fitted[,'xhat']
+hw.xts = xts(hw.xhat, order.by = index(ts.train[3:300]))
+tw = cbind(ts.train[3:300], ksw[3:300], ksn[3:300], hw.xts)
+colnames(tw) = c("Train", "Wide", "Narrow", "HW")
+
+plot.xts(tw, type='l', col = c('black', 'blue', "green"), minor.ticks = NULL, 
+         major.ticks = 12, main="Time Series Plot", grid.ticks.on="years",
+         xlim = c(min(index(ts.train)), max(index(ts.train))))
+```
+
+Fit a Linear Model to see if statistically significant trend
+```{r}
+trnd = lm(x, formula = value ~ num)
+summary(trnd)
+```
+### Observations:  
+Trend:  Series doesn't show any overall trend;  We do see a statistically significant linear trend - but the slope coefficient is fairly small and is economically insignificant.  So we would say the series is Trend Stationary.
+
+### 1.2.2 Stationarity: Unit Root  
+```{r}
+ #conduct Dicky-Fuller test to see if series is unit root stationary
+  adfPvalue = adf.test(ts.train)$p.value
+  result = "Unit Root Present - Non Stationary Series"
+  if (adfPvalue < 0.05){ result = " Reject Unit Root Presence - Stationary Series"} 
+  print(paste(result, " - p-value of adf-test =",adfPvalue))
+
+  #Look at the acf and pacf plots
+  par(mfrow=c(1,2))
+  acf(ts.train, main="ACF of Given Series")
+  pacf(ts.train, main="PACF of Given Series")
+
+```
+### Observations:
+Based on the p-value for the Dicky-Fuller test, we cannot reject the Null Hypothesis: "Unit root is present".   
+The ACF and PACF plots also suggest Random Walk behavior. The ACF declines very very slowly and The PACF shows significance at lag-1.  There is also significant correlations at lags 4,7,10,11,13. Note that correlation at lags 7 and 13 is negative.   
+
+Both the ADF test and the ACF plots, suggest that we should consider a first-difference to make the series stationary eventhough we didn't detect any meaningful trend.
+
+### 1.2.3 Stationarity: Seasonality  
+
+##Use the Holt Winters Method to Confirm (RB: - should we be including something here?)
+
+## RB: - should we hook the decompose/stl pieces below? It generates errors and for some reason doesn't find the seasonality that clearly exists.  
+
+```{r}
+#decompose(ts)
+#Decompose the series for seasonality, trends, etc.
+#STL: Seasonal decomposition of Timeseries by Loess
+#stl(ts, s.window = "periodic", s.degree = 1, t.degree = 1, robust = F)
+
+```
+Seasonal decomposition using decompose() and stl() show no evidence of seasonality. But visual inspection of the series definitely shows seasonal patterns.  
+Let's confirm that with a plot of the series by months, and computing the monthly means.
+
+```{r echo=FALSE}
+#Look at monthly averages
+boxplot(value~month(index(ts.train)), data=ts.train, main="Distribution of Values by Month", xlab="Month", ylab="Value")
+anova = aov(value~month(index(ts.train)), data=ts.train)
+summary(anova)
+```
+### The boxplot shows the values fluctuate around a different mean each month.  The Anova test confirms that we can reject the Null Hypothesis that the means by month are equal. There is clearly Seasonality in the series that needs to be addressed.  
+
+#2 Modeling
+#2.1 Address Non-Stationarity:  
+We have identified two types of potential stationarity - seasonality and random-walk.  
+Let's address Seasonality first.  Given the pattern observed in the series, a 12-m difference seems appropriate.  
+Let's study the impact of Differencing the series on it's stationarity.
+
+```{r}
+diff12 = diff(ts.train, lag=12, differences = 1)['1991-01-01/']
+#autoplot.zoo(diff12)
+plot.xts(diff12, type='l', minor.ticks = NULL, major.ticks = 12, main="Time Series Plot", grid.ticks.on="years")
+```
+
+
+
+```{r}
+par(mfrow=c(1,2))
+acf(diff12, na.action=na.pass)
+pacf(diff12, na.action = na.pass)
+adfPvalue = adf.test(diff12)$p.value
+result = "Unit Root Present - Non Stationary Series"
+if (adfPvalue < 0.05){ result = " Reject Unit Root Presence - Stationary Series"} 
+print(paste(result, " - p-value of adf-test =",adfPvalue))
+
+```
+
+## The acf shows a pattern of tailing off, and the pacf plot shows very high correlation at lag-1 and a significant negtive correlation at lag 3, 6; and +ve at 13. This suggests that we may have an auto-regressive process; but perhaps not a random-walk (??).  The ADF test also shows that here is no unit-root present. So after the seasonal differencing, it appears like we have a Stationary Series.     
+RB: - What would be the justification (if any) to take a first diff here? The ACF doesn't go down as fast as we would like??? Is that good enough despite the ADF test result? 
+
+
+##2.2 First Difference of Seasonal Differenced Series
+```{r}
+diff1 = diff(diff12, lag=1, differences=1, na.pad = F)
+autoplot.zoo(diff1)
+par(mfrow=c(1,2))
+
+acf(diff1, na.action=na.pass)
+pacf(diff1, na.action=na.pass)
+
+adfPvalue = adf.test(diff1)$p.value
+
+result = "Unit Root Present - Non Stationary Series"
+if (adfPvalue < 0.05){ result = " Reject Unit Root Presence - Stationary Series"} 
+print(paste(result, " - p-value of adf-test =",adfPvalue))
+
+#JK 11/30
+mean(ts.train)
+mean(diff1)
+
+#Decompose, stl shows no seasonality
+#decompose(diff1)
+
+#Plot residuals, add a smoother
+
+#Add linear regression on month, ANOVA by month, visualization
+#methods(forecast)
+#Holt-Winters, STL, 
+```
+
+
+## Observations:
+After first differencing the Seasonal differenced series, we see the ACF falls off, there are still a few significant correlations in the first few lags.  The PACF also shows significance among first few lags and at lag 12.   Given the ACF is negative at the seasonal period (12), we should consider adding a Seasonal MA term.  
+
+
+#We can hook this part below i think where we just take first difference of original series.  
+
+## First Difference
+```{r}
+diff1 = diff(ts.train, lag=1, differences=1, na.pad = F)
+autoplot.zoo(diff1)
+#hwd = HoltWinters(diff1, alpha = 0.2, beta, 0.2, gamma = 1, seasonal = "additive")
+
+acf(diff1, na.action=na.pass)
+pacf(diff1, na.action=na.pass)
+
+adfPvalue = adf.test(diff1)$p.value
+
+result = "Unit Root Present - Non Stationary Series"
+if (adfPvalue < 0.05){ result = " Reject Unit Root Presence - Stationary Series"} 
+print(paste(result, " - p-value of adf-test =",adfPvalue))
+
+#JK 11/30
+mean(ts.train)
+mean(diff1)
+
+#Decompose, stl shows no seasonality
+#decompose(diff1)
+
+#Plot residuals, add a smoother
+
+#Add linear regression on month, ANOVA by month, visualization
+#methods(forecast)
+#Holt-Winters, STL, 
+```
+
+###  RB: - Should we just fix D=1 and d=1 (or d=0 depeding on what we decide to do) - (alteratively/in addition, we could also prune the searches down by restricting P and Q only when D is >0)
+I changed the dataset from ts to ts.train (there is no reference to ts in the code above, I am not sure what ts was in your local workspace when u did it, so you might see some differences in results.)
+Should we compute the MAPE on the train set? So we pick a model with the lowest MAPE in-sample and also has best behaved residuals.  
+
+Then once we decide on the model parameters, we run the test set to see how well it does - what do you think?
+
+
+
+```{r}
+#Percentage Error: p_i=100e_i/y_i
+#MAPE: MAPE=mean(|p_i|).
+MAPE = function(y.meas, y.pred){
+  m = c()
+  for (i in seq(1, length(y.meas))){
+    m[i] = abs((y.meas[i]-y.pred[i])/y.meas[i])
+  }
+  return(mean(m))
+}
+
+#sMAPE: sMAPE=mean(200|y_i???y_i_hat|/(y_i+y_i_hat))
+#Cite: https://robjhyndman.com/hyndsight/smape/
+sMAPE = function(y.meas, y.pred){
+  s = c()
+  for (i in seq(1, length(y.meas))){
+    s[i] = 2*abs(y.meas[i]-y.pred[i])/(abs(y.meas[i])+abs(y.pred[i]))
+  }
+  return(mean(s))
+}
+
+#Add additional qualification methods (MAE, MPE, AC1, Thiel's U, etc.)
+arima.loop = function(p,d,q,P,D,Q,M){
+  df = data.frame(matrix(vector(), nrow = 0, ncol =  11,
+                dimnames=list(c(),
+                c("p",'d','q','P','D','Q','m',"AIC","BIC","MAPE","sMAPE"))),
+                stringsAsFactors=F)
+  
+  for (m in M){
+    for (D in seq(0,D)){
+      for (P in seq(0,P)){
+        for (Q in seq(0,Q)){
+          for (d in seq(0,d)){
+            for (p in seq(0,p)){
+              for (q in seq(0,q)){
+               tryCatch(
+                  {
+                   modfit = arima(ts.train, order = c(p,d,q), 
+                      seasonal = list(order = c(P,D,Q),period=m),
+                      method = "ML")
+                    mf.aic = modfit$aic
+                    mf.bic = BIC(modfit)
+                    pr = predict(modfit, n.ahead = 11)
+                    mf.mape = MAPE(ts.test, pr$pred)
+                    mf.smape = sMAPE(ts.test, pr$pred)
+                    df[dim(df)[1]+1,] = c(p,d,q,P,D,Q,m,mf.aic,mf.bic,mf.mape,mf.smape)
+                  },
+                  error=function(e){
+                    df[dim(df)[1]+1,] = c(p,d,q,P,D,Q,m,NA,NA,NA,NA)
+                  },
+                  warning=function(cond){
+                    return(NULL)
+                  }
+                )
+                
+              }}}}}}}
+  return(df)
+  }
+
+
+test.arloop = arima.loop(2,1,1,1,1,1,c(12))
+
+#Which model is has lowest MAPE?
+test.arloop[order(test.arloop$MAPE), ]
+
+#Which model is has lowest symmetric MAPE?
+head(test.arloop[order(test.arloop$sMAPE), ], 10)
+
+#Which model has lowest AIC?  
+  #Should we also include corrected AIC?
+  #Probably not.  All models will have same correction factor because they are all the same length.
+head(test.arloop[order(test.arloop$AIC), ], 10)
+```
+
+```{r}
+
+
+#Is this the best model to predict 2016?  
+#Probably more robust estimation is to use cross-validation
+#Cross-Validation of Time Series: https://robjhyndman.com/hyndsight/tscv/
+#A.K.A. Evaluation on a Rolling Forecasting Origin  
+
+
+#Can we use multiple seasons (e.g. 12 and 4?)
+best.arima = arima(ts.train, order = c(2,1,1),
+                   seasonal = list(order = c(1,1,0),period=6),
+                   method = "ML")
+
+acf(best.arima$residuals)
+pacf(best.arima$residuals)
+tsdiag(best.arima)
+best.arima$aic
+BIC(best.arima)
+pr = predict(best.arima, n.ahead = 11)
+sMAPE(ts.test,pr$pred)
+MAPE(ts.test,pr$pred)
+
+best.arima2 = arima(ts.train, order = c(2,0,0),
+                   seasonal = list(order = c(0,1,0),period=12),
+                   method = "ML")
+acf(best.arima2$residuals)
+pacf(best.arima2$residuals)
+tsdiag(best.arima2)
+
+best.arima2$aic
+BIC(best.arima2)
+pr = predict(best.arima2, n.ahead = 11)
+sMAPE(ts.test,pr$pred)
+MAPE(ts.test,pr$pred)
+
+best.arima3 = arima(ts.train, order = c(2,0,0),
+                   seasonal = list(order = c(1,1,1),period=12),
+                   method = "ML")
+acf(best.arima2$residuals)
+pacf(best.arima2$residuals)
+tsdiag(best.arima2)
+
+best.arima3$aic
+BIC(best.arima3)
+pr = predict(best.arima3, n.ahead = 11)
+sMAPE(ts.test,pr$pred)
+MAPE(ts.test,pr$pred)
+
+#Try loops with the other ARIMA methods (ML, CSS)
+
+```
+Observations:
+Taking the first difference makes the series stationary.  But the plot of the series and the ACF shows a strong seasonal pattern. The ACF plot shows strong  correlations at lag 3 (negative), 6 (postive), 9 (-ve), 12 (+ve).  The PACF shows similar seasonal patterns. 
+Let's investigate that further. 
+
+JK 11/30
+Notice that significant trends shifted from 13 to 12. The differenced series also has no trend when using the decompose() function.  We know that the mean of the differenced series is practically zero, so there is no trend we have to address if we go this route.
+
+
+```{r}
+#trying a simple model based on the following logic:
+# Seasonal difference to get rid of seasonality stationarity
+# Since we still observed very slow decaying ACF, applying first difference as well
+# SInce acf at the seasonal period of 12 for the differenced series was negative, 
+# introducing an SMA term.
+
+
+RBmodfit1 = arima(ts.train, order = c(0,1,0),  
+               seasonal = list(order = c(0,1,1),period=12), method = "ML")
+acf(RBmodfit1$residuals)
+pacf(RBmodfit1$residuals)
+BoxPValue = Box.test(RBmodfit1$residuals,type='Ljung-Box',lag=20)$p.value
+result = "Modfilt1 REsiduals Data are Random"
+if (BoxPValue < 0.05){ result = "Modfilt1 REsiduals Data are NOT random "} 
+print(paste(result, " - p-value of box-test = ",BoxPValue))
+
+#Residual plot looks like it could use another AR term- lot of persistence - confirmed by the Box-Jlung test.
+
+```
+
+```{r}
+
+RBmodfit2 = arima(ts.train, order = c(2,1,0),  
+               seasonal = list(order = c(0,1,1),period=12), method = "ML")
+
+plot(RBmodfit2$residuals)
+acf(RBmodfit2$residuals)
+pacf(RBmodfit2$residuals)
+
+BoxPValue = Box.test(RBmodfit2$residuals,type='Ljung-Box',lag=20)$p.value
+  result = "Modfilt1 REsiduals Data are Random"
+  if (BoxPValue < 0.05){ result = "Modfilt1 REsiduals Data are NOT random "} 
+  print(paste(result, " - p-value of box-test = ",BoxPValue))
+
+```
+
