@@ -14,7 +14,7 @@ library(lubridate)
 library(forecast)
 ```
 
-#Read and Examine the data:  
+###Preface  
 We conducted a thorough examination of the data to ascertain there aren't any missing values, coding errors etc. We did not identify any issues that needed to be addressed. We have not provided the details of that examination to reserve the allotted page-limit for more interesting examination of the given time series.  
 
 ```{r}
@@ -27,9 +27,8 @@ ts.train = ts_all['1990-01-01/2013-12-31']  #Create train set from 1990-2013
 ts.dev = ts_all['2014-01-01/2014-12-31'] #we will use a dev set to tune hyper parameters
 ts.test = ts_all["2015-01-01/"] #we will use test set to measure model performance
 ```
-#1. Exploratory Data Analysis:
-
-## 1.1 Plot the time series
+##1. Exploratory Data Analysis:
+### 1.1 Plot the time series
 ```{r fig.height=2.5, fig.width=5, fig.align='center'}
 plot.xts(ts.train, type='l', minor.ticks = NULL, major.ticks = 12, main="Time Series Plot", grid.ticks.on="years")
 ```
@@ -45,7 +44,7 @@ Next step in our EDA, we will check for stationarity.
 ### 1.2.1 Stationarity - Is there a trend?:  
 Though visual inspection of the time series plot showed no trend, we employed smoothing techniqes to plot a smoothed version of the series (which did not show any trend as well). We also fit a linear model to see if there is a statistically significant non-zero slope coefficient.   
 
-```{r fig.height=2.5, fig.align='center', fig.width=6}
+```{r fig.height=2.5, fig.align='center', fig.width=6, message=FALSE}
 #Add Smoothing
 library(fpp)
 N = length(ts.train)
@@ -93,7 +92,7 @@ Seasonal decomposition using decompose() and stl() show no evidence of seasonali
 #Look at monthly averages
 boxplot(value~month(index(ts.train)), data=ts.train, main="Distribution of Values by Month", xlab="Month", ylab="Value")
 anova = aov(value~month(index(ts.train)), data=ts.train)
-summary(anova)
+print(paste('12-Season ANOVA: p = ', round(summary(anova)[[1]][["Pr(>F)"]][1],3)))
 ```
 #### Observations:
 The boxplot shows the values of the time series for each month fluctuates around a different mean each month.  This suggests that the series has seasonal patterns.  The Anova test says we can reject the Null Hypothesis that the means by month are equal. There is clearly Seasonality in the series that needs to be addressed.  
@@ -106,7 +105,7 @@ We have identified two types of potential stationarity - Seasonality and Random-
 ###2.1.1 Seasonal Stationarity:  
 Given the pattern observed in the series, a 12-m difference seems appropriate.  
 
-```{r fig.height=2.5, fig.width=7, fig.align='center'}
+```{r fig.height=2.25, fig.width=7, fig.align='center', echo = FALSE}
 diff12 = diff(ts.train, lag=12, differences = 1)['1991-01-01/']
 plot.xts(diff12, type='l', minor.ticks = NULL, major.ticks = 12, 
          main="Seasonally Differenced Time Series Plot", grid.ticks.on="years")
@@ -140,11 +139,8 @@ result = "Unit Root Present - Non Stationary Series"
 if (adfPvalue < 0.05){ result = " Reject Unit Root Presence - Stationary Series"} 
 print(paste(result, " - p-value of adf-test =",round(adfPvalue,4)))
 ```
-####Observations:
-The plot of this differenced is more stationary, so likely does not require any further differencing. We see that there are some significant correlations in the first few lags of the ACF and a spike in the PACF at lag 2. **This suggests an AR[2] process**. The PACF also decreases from lag 2 to 7, **so there might be an underlying MA 1 term.** The PACF is negative at the seasonal period (12) and to a lesser extent (24), **which might indicate an order 1 seasonal MA term**.  The ACF shows is a significant negative autocorrelation lag at (12) and possibly at lag (24), **which might indicate an order 1 seasonal AR term**
-
-###2.2 Model Parameter Search:  
-Given these observations, we will fit an ARIMA(p,d,q)x(P,D,Q)[12] model.  We know for sure the following parameters:  D = 1; d = 1. We also have evidence to try q = 1, Q = 1, p = 2, and P = 1. Our search space will be Arima(p=1,2 d=1 q=0,1)x(P=0,1 D=1 Q=0,1), 16 models total. 
+###2.2 Model Parameter Search: 
+The plot of this differenced is more stationary, so likely does not require any further differencing. We see that there are some significant correlations in the first few lags of the ACF and a spike in the PACF at lag 2. **This suggests an AR[2] process**. The PACF also decreases from lag 2 to 7, **so there might be an underlying MA 1 term.** The PACF is negative at the seasonal period (12) and to a lesser extent (24), **which might indicate an order 1 seasonal MA term**.  The ACF shows is a significant negative autocorrelation lag at (12) and possibly at lag (24), **which might indicate an order 1 seasonal AR term**. Given these observations, we will fit an ARIMA(p,d,q)x(P,D,Q)[12] model.  We know for sure the following parameters:  D = 1; d = 1. We also have evidence to try q = 1, Q = 1, p = 2, and P = 1. Our search space will be Arima(p=1,2 d=1 q=0,1)x(P=0,1 D=1 Q=0,1), 16 models total. 
 
 ###2.3: Model Selection Approach:
 We will fit each of these models on the train set and evaluate performance using AIC.  The four best AICs will then undergo residuals analysis using ACF/PACF and calculation of the Llung-Box p-value up to 24 lags, per Rob Hyndman for seasonal data (https://robjhyndman.com/hyndsight/ljung-box-test/). Following residuals analysis, we will calculate forecast accuracy on the 2014 development set using Symmetric MAPE, which addresses traditional MAPE's heavier penalties on negative predictions than positive ones (see https://robjhyndman.com/hyndsight/smape/). Finally, once we decide on the final model parameters, we will run the model through the test set to evaluate performance. 
@@ -232,3 +228,4 @@ pred2 = predict(best.arima2, n.ahead = 11)$pred
 smape2 = sMAPE(ts.test, pred2)
 print(paste("(1,1,1)x(0,1,1): Symmetric MAPE for test set:", round(smape2,4)))
 ```
+Despite our reasoning, the more parsimonious model performed best on the 2015 data. Still, the amount by which this model outperformed our choice decreased from 16% to 10% perhaps indicating that our chosen model will outperform the parsimonious model in 2016.
