@@ -1,0 +1,53 @@
+---
+title: "Lab 4"
+author: "Ram Balasubramanian, John Kenney"
+date: "Dec 19,2017"
+output: pdf_document
+---
+
+```{r include = FALSE}
+library(knitr)
+opts_chunk$set(tidy.opts=list(width.cutoff=70),tidy=TRUE, warning=FALSE, options(digits = 4))
+```
+
+###Description of data provided  
+The dataset contains 1200 observations - one observation per year (25 years) for each of the 48 contiguous states in the US. There are 56 variables (columns) in this dataset, it is easier to think about the variables in the following groupings  
+1. Traffic/Driving Laws:  Speed limit, Seatbelt, GDL, 
+2. Related laws:  Min drinking age, Zero Tol, Bac10, Bac08, perse,  
+2. Absolute numbers: total fatalities, night time fatalities, weekend fatalities, state population, vehicle miles driven
+3. Relative numbers: fatalities per 100K people, fatalities per 100M miles, vehicle miles per capita
+4. Other data: unemp. rate, pop ages 14-24
+5. Dummy variables for each state
+
+The dependent variable of interest is $totfatrte$ : Total Fatalities Per 100K population  
+One can think of it as depending on Extent of traffic (miles driven per 100K pop), Environmental conditions (weather/driving conditions), Legal Deterrents (nature of infractions and severity of legal consequences),  Economic/Demograhics (poverty, unemp rate, youth population).  
+Some of these variables that may impact total fatalities
+
+
+```{r}
+library(data.table)
+library(Hmisc)
+load('driving.Rdata')
+
+#make a copy because i don't like to use "data" for name of dataframe
+df = cbind(data)
+d = describe(df)
+dt = data.table(df)
+
+```
+##1. Exploratory Data Analysis:
+
+### How does $totfatrte$  change over time?  
+Let's look at plot of $totfatrte$ for all the 48 states in aggregate  
+
+
+```{r fig.height=2.5, fig.width=5, fig.align='center'}
+library(ggplot2)
+df_tot_year = df %>% group_by(year) %>% summarise(totpop = sum(statepop), 
+                                    totfat = sum(totfat))
+df_tot_year$totfatrte = df_tot_year$totfat/df_tot_year$totpop
+
+qplot(data = df_tot_year, x=year, y=totfatrte)
+
+```
+### Observations:
